@@ -75,7 +75,6 @@ export class LLMService implements ILLMService {
     // 允许所有API包括OpenAI使用代理
     if (modelConfig.useVercelProxy === true && isVercel() && processedBaseURL) {
       finalBaseURL = getProxyUrl(processedBaseURL, isStream);
-      console.log(`使用${isStream ? '流式' : ''}API代理:`, finalBaseURL);
     }
 
     // 创建OpenAI实例配置
@@ -124,7 +123,6 @@ export class LLMService implements ILLMService {
     // 允许所有API包括OpenAI使用代理
     if (modelConfig.useVercelProxy === true && isVercel() && processedBaseURL) {
       finalBaseURL = getProxyUrl(processedBaseURL, isStream);
-      console.log(`使用${isStream ? '流式' : ''}API代理:`, finalBaseURL);
     }
     return genAI.getGenerativeModel(modelOptions, { "baseUrl": finalBaseURL });
   }
@@ -255,6 +253,9 @@ export class LLMService implements ILLMService {
 
       if (modelConfig.provider === 'gemini') {
         return this.sendGeminiMessage(messages, modelConfig);
+      } else if (modelConfig.provider.toLowerCase() === 'azure') {
+        // 使用原生HTTP请求，直接调用Azure OpenAI API
+        return this.sendAzureHttpMessage(messages, modelConfig);
       } else {
         // OpenAI兼容格式的API，包括DeepSeek和自定义模型
         return this.sendOpenAIMessage(messages, modelConfig);
@@ -264,6 +265,89 @@ export class LLMService implements ILLMService {
         throw error;
       }
       throw new APIError(`发送消息失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 发送Azure OpenAI HTTP请求消息
+   */
+  private async sendAzureHttpMessage(messages: Message[], modelConfig: ModelConfig): Promise<string> {
+    const formattedMessages = messages.map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+
+    const requestBody = {
+      model: modelConfig.defaultModel,
+      messages: formattedMessages,
+      ...modelConfig.llmParams
+    };
+
+    // 处理Azure OpenAI的URL和api-version参数
+    let finalURL = modelConfig.baseURL;
+    
+    // 移除末尾的斜杠，避免判断错误
+    finalURL = finalURL.replace(/\/+$/, '');
+    
+    // 如果URL还没有包含api-version参数，添加默认值
+    if (!finalURL.includes('api-version=')) {
+      const separator = finalURL.includes('?') ? '&' : '?';
+      finalURL = `${finalURL}${separator}api-version=2024-02-15-preview`;
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+
+    if (modelConfig.apiKey) {
+      // 检查是否是Azure OpenAI (通过URL判断)
+      if (modelConfig.baseURL?.includes('openai.azure.com')) {
+        // Azure OpenAI使用api-key头
+        headers['api-key'] = modelConfig.apiKey;
+      } else {
+        // 其他API使用Authorization Bearer Token
+        headers['Authorization'] = `Bearer ${modelConfig.apiKey}`;
+      }
+    }
+
+    try {
+      const response = await fetch(finalURL, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        // 安全的错误日志，不暴露请求详情
+        console.error(`Azure OpenAI API请求失败: ${response.status} ${response.statusText}`);
+        throw new APIError(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      // 尝试解析不同格式的响应
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        // OpenAI格式
+        return data.choices[0].message.content || '';
+      } else if (data.response) {
+        // 简单格式
+        return data.response;
+      } else if (data.content) {
+        // 另一种格式
+        return data.content;
+      } else if (typeof data === 'string') {
+        // 纯文本响应
+        return data;
+      } else {
+        throw new APIError('无法解析API响应格式');
+      }
+    } catch (error: any) {
+      // 安全的错误处理，不暴露敏感信息
+      if (error instanceof APIError) {
+        throw error;
+      }
+      console.error('Azure OpenAI请求异常:', error.name, error.message);
+      throw new APIError(`请求失败: ${error.message}`);
     }
   }
 
@@ -293,6 +377,11 @@ export class LLMService implements ILLMService {
 
       if (modelConfig.provider === 'gemini') {
         await this.streamGeminiMessage(messages, modelConfig, callbacks);
+      } else if (modelConfig.provider.toLowerCase() === 'azure') {
+        // 对于azure类型，目前不支持流式，回退到普通请求
+        const result = await this.sendAzureHttpMessage(messages, modelConfig);
+        callbacks.onToken(result);
+        callbacks.onComplete();
       } else {
         // OpenAI兼容格式的API，包括DeepSeek和自定义模型
         await this.streamOpenAIMessage(messages, modelConfig, callbacks);
@@ -535,7 +624,6 @@ export class LLMService implements ILLMService {
     try {
       // 尝试标准 OpenAI 格式的模型列表请求
       const response = await openai.models.list();
-      console.log('API返回的原始模型列表:', response);
 
       // 只处理标准 OpenAI 格式
       if (response && response.data && Array.isArray(response.data)) {
@@ -553,7 +641,6 @@ export class LLMService implements ILLMService {
 
     } catch (error: any) {
       console.error('获取模型列表失败:', error);
-      console.log('错误详情:', error.response?.data || error.message);
 
       // 发生错误时返回空数组
       return [];

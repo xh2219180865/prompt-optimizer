@@ -155,6 +155,21 @@
                           class="theme-manager-input"
                           :placeholder="t('modelManager.apiKeyPlaceholder')" />
                   </div>
+                  <div>
+                    <label class="block text-sm font-medium theme-manager-text mb-1.5">提供商类型</label>
+                    <select v-model="editingModel.provider" class="theme-manager-input">
+                      <option value="custom">自定义 (Custom)</option>
+                      <option value="azure">Azure OpenAI</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="zhipu">智谱 AI</option>
+                      <option value="siliconflow">SiliconFlow</option>
+                    </select>
+                    <p class="text-xs theme-manager-text-secondary mt-1">
+                      选择Azure OpenAI可避免自动添加/chat/completions后缀
+                    </p>
+                  </div>
                   <div v-if="vercelProxyAvailable" class="flex items-center space-x-2">
                     <input 
                       :id="`vercel-proxy-${editingModel.key}`" 
@@ -347,6 +362,21 @@
                     <input v-model="newModel.apiKey" type="password" required
                           class="theme-manager-input"
                           :placeholder="t('modelManager.apiKeyPlaceholder')" />
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium theme-manager-text mb-1.5">提供商类型</label>
+                    <select v-model="newModel.provider" class="theme-manager-input">
+                      <option value="custom">自定义 (Custom)</option>
+                      <option value="azure">Azure OpenAI</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="gemini">Google Gemini</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="zhipu">智谱 AI</option>
+                      <option value="siliconflow">SiliconFlow</option>
+                    </select>
+                    <p class="text-xs theme-manager-text-secondary mt-1">
+                      选择Azure OpenAI可避免自动添加/chat/completions后缀
+                    </p>
                   </div>
                   <div v-if="vercelProxyAvailable" class="flex items-center space-x-2">
                     <input 
